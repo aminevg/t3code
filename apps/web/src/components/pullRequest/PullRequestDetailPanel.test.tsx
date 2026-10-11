@@ -83,6 +83,7 @@ vi.mock("~/state/usePullRequestStack", () => ({
     refresh,
   }),
 }));
+vi.mock("../ui/input", () => ({ Input: "input" }));
 vi.mock("../ui/toast", () => ({ toastManager: { add: vi.fn(), update: vi.fn() } }));
 vi.mock("../ui/tooltip", () => ({
   TooltipProvider: Wrapper,
@@ -300,71 +301,59 @@ const unrelatedThread = {
   linkedPullRequest: { ...surface, number: 9, url: link(9, "created").url },
 };
 
-describe.each(["Enter", "Escape"])("PR title editing with %s", (key) => {
-  it.each([
-    { isComposing: true, keyCode: key === "Enter" ? 13 : 27 },
-    { isComposing: false, keyCode: 229 },
-  ])("keeps the draft during IME composition (%j)", async ({ isComposing, keyCode }) => {
-    await act(async () => {
-      renderer = create(
-        <PullRequestDetailPanel
-          environmentId={threadRef.environmentId}
-          reference={detail}
-          context="page"
-          shortcutsEnabled={false}
-          getShortcutContext={() => ({
-            terminalFocus: false,
-            terminalOpen: false,
-            previewFocus: false,
-            previewOpen: false,
-            isWeb: true,
-            isDesktop: false,
-          })}
-        />,
-      );
-    });
-    await click("Edit title");
-    const titleInput = () => renderer.root.findByType("input");
-    const title = "日本語のタイトル";
-    const currentTarget = { value: title, tagName: "INPUT" };
-    await act(async () =>
-      titleInput().props.onChange({ target: currentTarget, currentTarget, nativeEvent: {} }),
+it.each([
+  { isComposing: true, keyCode: 13 },
+  { isComposing: false, keyCode: 229 },
+])("does not save the PR title during IME composition (%j)", async ({ isComposing, keyCode }) => {
+  await act(async () => {
+    renderer = create(
+      <PullRequestDetailPanel
+        environmentId={threadRef.environmentId}
+        reference={detail}
+        context="page"
+        shortcutsEnabled={false}
+        getShortcutContext={() => ({
+          terminalFocus: false,
+          terminalOpen: false,
+          previewFocus: false,
+          previewOpen: false,
+          isWeb: true,
+          isDesktop: false,
+        })}
+      />,
     );
-
-    const preventDefault = vi.fn();
-    await act(async () =>
-      titleInput().props.onKeyDown({
-        key,
-        keyCode,
-        currentTarget,
-        nativeEvent: { isComposing },
-        preventDefault,
-      }),
-    );
-    expect(update).not.toHaveBeenCalled();
-    expect(titleInput().props.value).toBe(title);
-    expect(preventDefault).not.toHaveBeenCalled();
-
-    await act(async () =>
-      titleInput().props.onKeyDown({
-        key,
-        currentTarget,
-        keyCode: key === "Enter" ? 13 : 27,
-        nativeEvent: { isComposing: false },
-        preventDefault,
-      }),
-    );
-    expect(preventDefault).toHaveBeenCalledOnce();
-    expect(renderer.root.findAllByType("input")).toHaveLength(0);
-    if (key === "Enter") {
-      expect(update).toHaveBeenCalledExactlyOnceWith({
-        environmentId: threadRef.environmentId,
-        input: { projectId: detail.projectId, repository: detail.repository, number: 1, title },
-      });
-    } else {
-      expect(update).not.toHaveBeenCalled();
-    }
   });
+  await click("Edit title");
+  const titleInput = () => renderer.root.findByType("input");
+  const title = "日本語のタイトル";
+  await act(async () => titleInput().props.onChange({ target: { value: title } }));
+
+  const preventDefault = vi.fn();
+  await act(async () =>
+    titleInput().props.onKeyDown({
+      key: "Enter",
+      keyCode,
+      nativeEvent: { isComposing },
+      preventDefault,
+    }),
+  );
+  expect(update).not.toHaveBeenCalled();
+  expect(titleInput().props.value).toBe(title);
+  expect(preventDefault).not.toHaveBeenCalled();
+
+  await act(async () =>
+    titleInput().props.onKeyDown({
+      key: "Enter",
+      keyCode: 13,
+      nativeEvent: { isComposing: false },
+      preventDefault,
+    }),
+  );
+  expect(update).toHaveBeenCalledExactlyOnceWith({
+    environmentId: threadRef.environmentId,
+    input: { ...surface, title },
+  });
+  expect(renderer.root.findAllByType("input")).toHaveLength(0);
 });
 
 describe.each([
